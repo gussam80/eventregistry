@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>스마트 행사 등록부 - 디지털 현장 등록 시스템</title>
+  
+  <!-- CSS Stylesheet -->
+  <link rel="stylesheet" href="css/styles.css">
+  
+  <!-- Lucide Icons (CDN with local SVG fallbacks) -->
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+</head>
+<body>
+
+  <!-- =======================================================================
+       Header Navigation
+       ======================================================================= -->
+  <header class="app-header no-print">
+    <div class="header-container">
+      <div class="brand-logo" onclick="app.navigate('home')">
+        <div class="brand-icon">📋</div>
+        <div class="brand-text">
+          <span class="brand-title">스마트 행사 등록부</span>
+          <span class="brand-subtitle">Smart Digital Event Registry</span>
+        </div>
+      </div>
+
+      <button class="mobile-nav-toggle" id="mobile-nav-toggle" aria-label="메뉴 열기">
+        ☰
+      </button>
+
+      <nav>
+        <ul class="nav-menu" id="nav-menu">
+          <li>
+            <button class="nav-btn active" data-view="home" onclick="app.navigate('home')">
+              🏠 홈
+            </button>
+          </li>
+          <li>
+            <button class="nav-btn" data-view="new-event" onclick="app.openNewEventForm()">
+              ➕ 새 등록부 만들기
+            </button>
+          </li>
+          <li>
+            <button class="nav-btn" data-view="saved-events" onclick="app.navigate('saved-events')">
+              📁 저장된 등록부 <span class="badge" id="nav-event-count">0</span>
+            </button>
+          </li>
+          <li>
+            <button class="nav-btn" data-view="register" onclick="app.navigate('register')">
+              📝 등록하기 (현장)
+            </button>
+          </li>
+          <li>
+            <button class="nav-btn" data-view="manage" onclick="app.navigate('manage')">
+              📊 등록 관리 <span class="badge" id="nav-reg-count" style="background:#059669;">0</span>
+            </button>
+          </li>
+          <li>
+            <button class="nav-btn" data-view="print" onclick="app.navigate('print')">
+              🖨️ 출력 / 인쇄
+            </button>
+          </li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <!-- =======================================================================
+       Main Container & Views
+       ======================================================================= -->
+  <main class="app-main" id="main-content">
+
+    <!-- 1. VIEW: HOME / DASHBOARD -->
+    <section id="view-home" class="view-section active">
+      <div class="hero-banner">
+        <div class="hero-content">
+          <h2>🏫 학교 및 다양한 행사를 위한 디지털 등록부</h2>
+          <p>학부모 설명회, 공개수업, 진로체험, 교직원 연수 등 행사별 맞춤형 등록부를 간편하게 생성하고 현장에서 태블릿·스마트폰으로 서명 등록하세요.</p>
+        </div>
+        <div class="hero-actions">
+          <button class="btn btn-lg btn-success" onclick="app.openNewEventForm()">
+            ➕ 새 등록부 만들기
+          </button>
+          <button class="btn btn-lg btn-secondary" onclick="app.startCurrentEventKiosk()">
+            📝 현재 행사 등록 시작
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick Stats Grid -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-icon-wrapper stat-icon-blue">📁</div>
+          <div class="stat-info">
+            <span class="stat-label">총 행사 등록부</span>
+            <span class="stat-value" id="stat-total-events">0</span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon-wrapper stat-icon-green">👥</div>
+          <div class="stat-info">
+            <span class="stat-label">현재 행사 등록 인원</span>
+            <span class="stat-value" id="stat-active-registrations">0명</span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon-wrapper stat-icon-amber">📅</div>
+          <div class="stat-info">
+            <span class="stat-label">선택된 현재 행사</span>
+            <span class="stat-value" id="stat-active-event-title" style="font-size: 1.05rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px;">-</span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon-wrapper stat-icon-indigo">✍️</div>
+          <div class="stat-info">
+            <span class="stat-label">서명 등록률</span>
+            <span class="stat-value" id="stat-signature-rate">100%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent Events Section -->
+      <div class="page-header">
+        <div class="page-title-group">
+          <h1>최근 등록부 목록</h1>
+          <p>등록부를 선택하여 즉시 현장 등록을 시작하거나 관리·출력할 수 있습니다.</p>
+        </div>
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-sm btn-secondary" onclick="app.openBackupModal()">
+            💾 데이터 백업/복원
+          </button>
+          <button class="btn btn-sm btn-outline-primary" onclick="app.resetSampleDataConfirm()">
+            🔄 샘플 데이터 다시 불러오기
+          </button>
+        </div>
+      </div>
+
+      <div class="events-grid" id="home-events-list">
+        <!-- Dynamically rendered event cards -->
+      </div>
+    </section>
+
+    <!-- 2. VIEW: NEW / EDIT EVENT BUILDER -->
+    <section id="view-new-event" class="view-section">
+      <div class="page-header">
+        <div class="page-title-group">
+          <h1 id="event-builder-title">새 등록부 만들기</h1>
+          <p>행사 정보와 대상을 선택하고 필요한 입력 항목을 맞춤형으로 설정하세요.</p>
+        </div>
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-secondary" onclick="app.navigate('saved-events')">취소</button>
+          <button class="btn btn-primary" onclick="app.saveEventForm(false)">💾 등록부 저장</button>
+          <button class="btn btn-success" onclick="app.saveEventForm(true)">🚀 저장 후 즉시 등록 시작</button>
+        </div>
+      </div>
+
+      <form id="form-event-builder" onsubmit="event.preventDefault(); app.saveEventForm(false);">
+        <input type="hidden" id="builder-event-id" value="">
+
+        <!-- Step 1: Basic Event Information -->
+        <div class="card" style="margin-bottom: 1.5rem;">
+          <div class="card-header">
+            <h2 class="card-title">1. 행사 기본 정보</h2>
+          </div>
+          <div class="card-body">
+            <div class="form-group">
+              <label class="form-label" for="builder-title">
+                행사명 <span class="required-badge">*</span>
+              </label>
+              <input type="text" id="builder-title" class="form-control" placeholder="예: 2026학년도 학부모 교육과정 설명회, 진로체험의 날" required style="font-size: 1.1rem; font-weight: 600;">
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.25rem;">
+              <div class="form-group">
+                <label class="form-label" for="builder-date">
+                  행사 날짜 <span class="required-badge">*</span>
+                </label>
+                <input type="date" id="builder-date" class="form-control" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="builder-time">행사 시간</label>
+                <input type="time" id="builder-time" class="form-control" value="14:00">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="builder-location">
+                  행사 장소 <span class="required-badge">*</span>
+                </label>
+                <input type="text" id="builder-location" class="form-control" placeholder="예: 본관 1층 시청각실, 체육관, 강당" required>
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label" for="builder-description">행사 안내 문구 (참가자 화면 표시)</label>
+              <textarea id="builder-description" class="form-control" rows="2" placeholder="참가자에게 안내할 간단한 환영 문구 또는 주의사항을 입력하세요."></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 2: Target Audience Selection -->
+        <div class="card" style="margin-bottom: 1.5rem;">
+          <div class="card-header">
+            <h2 class="card-title">2. 등록 대상 선택 (기본 항목 자동 세팅)</h2>
+          </div>
+          <div class="card-body">
+            <div class="target-preset-grid">
+              <div class="target-preset-card selected" data-target="parent" onclick="app.selectTargetPreset('parent')">
+                <div class="preset-icon">👨‍👩‍👧</div>
+                <div class="preset-name">학부모</div>
+                <div class="preset-desc">설명회, 공개수업, 입학설명회 등</div>
+              </div>
+              <div class="target-preset-card" data-target="student" onclick="app.selectTargetPreset('student')">
+                <div class="preset-icon">🎓</div>
+                <div class="preset-name">학생</div>
+                <div class="preset-desc">진로체험, 교내대회, 축제 등</div>
+              </div>
+              <div class="target-preset-card" data-target="teacher" onclick="app.selectTargetPreset('teacher')">
+                <div class="preset-icon">👨‍🏫</div>
+                <div class="preset-name">교사 / 교직원</div>
+                <div class="preset-desc">교직원 연수, 회의, 협의회 등</div>
+              </div>
+              <div class="target-preset-card" data-target="other" onclick="app.selectTargetPreset('other')">
+                <div class="preset-icon">🌐</div>
+                <div class="preset-name">기타 참가자</div>
+                <div class="preset-desc">외부 초청 인사, 일반 방문객 등</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 3: Field Selection Checkboxes -->
+        <div class="card" style="margin-bottom: 1.5rem;">
+          <div class="card-header">
+            <h2 class="card-title">3. 등록 항목 선택 (체크한 항목만 화면 및 출력에 표시)</h2>
+          </div>
+          <div class="card-body">
+            <p class="form-hint" style="margin-top: 0; margin-bottom: 1rem;">
+              필요한 항목에 체크하세요. 자필 서명을 선택하면 참가자가 손가락이나 펜으로 직접 서명할 수 있습니다.
+            </p>
+            <div class="fields-checkbox-grid" id="builder-standard-fields">
+              <!-- Dynamically populated checkboxes based on preset -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 4: Custom Fields Builder -->
+        <div class="card" style="margin-bottom: 2rem;">
+          <div class="card-header">
+            <h2 class="card-title">4. 사용자 정의 항목 추가 (선택사항)</h2>
+            <button type="button" class="btn btn-sm btn-primary" onclick="app.addCustomFieldRow()">
+              ➕ 새 항목 추가
+            </button>
+          </div>
+          <div class="card-body">
+            <p class="form-hint" style="margin-top: 0; margin-bottom: 1rem;">
+              차량 번호, 참석 프로그램, 참석 인원, 희망 부서 등 학교 행사에 필요한 특별 항목을 추가할 수 있습니다.
+            </p>
+            <div class="custom-fields-list" id="builder-custom-fields-list">
+              <!-- Custom field rows dynamically added -->
+            </div>
+          </div>
+        </div>
+      </form>
+    </section>
+
+    <!-- 3. VIEW: SAVED EVENTS LIST -->
+    <section id="view-saved-events" class="view-section">
+      <div class="page-header">
+        <div class="page-title-group">
+          <h1>저장된 등록부 관리</h1>
+          <p>생성된 모든 행사 등록부를 확인하고, 현장 등록·수정·출력·복사를 진행하세요.</p>
+        </div>
+        <button class="btn btn-primary" onclick="app.openNewEventForm()">
+          ➕ 새 등록부 만들기
+        </button>
+      </div>
+
+      <div class="table-toolbar">
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="saved-events-search" class="form-control search-input" placeholder="행사명, 장소 등으로 검색..." oninput="app.renderSavedEvents()">
+        </div>
+        <div style="display: flex; gap: 0.5rem;">
+          <select id="saved-events-target-filter" class="form-control" style="width: auto;" onchange="app.renderSavedEvents()">
+            <option value="all">모든 대상 전체</option>
+            <option value="parent">학부모 대상</option>
+            <option value="student">학생 대상</option>
+            <option value="teacher">교사 대상</option>
+            <option value="other">기타 대상</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="events-grid" id="saved-events-grid">
+        <!-- Rendered event cards -->
+      </div>
+    </section>
+
+    <!-- 4. VIEW: KIOSK / REGISTRATION VIEW -->
+    <section id="view-register" class="view-section">
+      <div class="kiosk-wrapper">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;" class="no-print">
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <select id="kiosk-event-switcher" class="form-control" style="font-weight: 600;" onchange="app.changeActiveEvent(this.value, 'register')">
+              <!-- Event options -->
+            </select>
+          </div>
+          <div style="display: flex; gap: 0.5rem;">
+            <button class="btn btn-sm btn-secondary" onclick="app.toggleFullScreen()" title="전체화면 키오스크 모드">
+              ⛶ 전체화면
+            </button>
+            <button class="btn btn-sm btn-outline-primary" onclick="app.openQRModal()" title="스마트폰 등록용 QR코드">
+              📱 QR코드 표시
+            </button>
+            <button class="btn btn-sm btn-primary" onclick="app.navigate('manage')">
+              📊 등록 현황 보기
+            </button>
+          </div>
+        </div>
+
+        <div class="kiosk-card">
+          <!-- Kiosk Top Banner -->
+          <div class="kiosk-banner">
+            <span class="kiosk-banner-tag" id="kiosk-target-tag">학부모 등록부</span>
+            <h1 id="kiosk-event-title">2026학년도 학부모 설명회</h1>
+            <div class="kiosk-meta">
+              <span id="kiosk-meta-date">📅 2026.08.30</span>
+              <span id="kiosk-meta-location">📍 본관 1층 시청각실</span>
+              <span id="kiosk-meta-count">👥 현재 등록: <strong>0명</strong></span>
+            </div>
+            <p id="kiosk-event-desc" style="margin-top: 0.75rem; font-size: 0.95rem; color: #f0fdf4;"></p>
+          </div>
+
+          <!-- Kiosk Form Body -->
+          <div class="kiosk-body" id="kiosk-form-container">
+            <form id="kiosk-registration-form" onsubmit="event.preventDefault(); app.submitRegistration();">
+              <div id="kiosk-fields-mount">
+                <!-- Dynamically rendered input fields -->
+              </div>
+
+              <!-- Signature Area (if enabled) -->
+              <div id="kiosk-signature-container" class="kiosk-field" style="display: none;">
+                <label class="kiosk-label">
+                  자필 서명 <span class="required-badge">*</span>
+                </label>
+                <div class="signature-box">
+                  <div class="signature-helper">아래 사각형 영역 안에 손가락이나 마우스로 서명해 주세요.</div>
+                  <canvas id="kiosk-signature-canvas" class="signature-canvas"></canvas>
+                  <div class="signature-actions">
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="app.clearSignature()">
+                      🔄 다시 작성
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Submit Button -->
+              <div style="margin-top: 2rem;">
+                <button type="submit" class="btn btn-lg btn-success" style="width: 100%; font-size: 1.35rem; padding: 1.15rem; font-weight: 800; border-radius: var(--radius-xl); box-shadow: 0 8px 20px rgba(5, 150, 105, 0.3);">
+                  ✅ 등록 완료
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Registration Success Screen (Shows after submit) -->
+          <div class="registration-success-overlay" id="kiosk-success-overlay">
+            <div class="success-icon-box">✓</div>
+            <h2 class="success-title">등록이 성공적으로 완료되었습니다!</h2>
+            <p style="font-size: 1.1rem; color: #334155;">소중한 시간 내어 참석해 주셔서 감사합니다.</p>
+            <div class="success-seq-badge" id="success-seq-text">등록 번호: 1번</div>
+            <div class="success-countdown" id="success-countdown-text">
+              <strong>3초</strong> 후 다음 참가자를 위해 화면이 초기화됩니다.
+            </div>
+            <div style="margin-top: 1.5rem;">
+              <button class="btn btn-lg btn-primary" onclick="app.resetKioskFormImmediate()">
+                ➡️ 다음 참가자 바로 등록하기
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. VIEW: MANAGEMENT & ATTENDEE LIST -->
+    <section id="view-manage" class="view-section">
+      <div class="page-header">
+        <div class="page-title-group">
+          <h1>행사 등록 현황 및 관리</h1>
+          <p>실시간 등록자 명단을 확인하고 검색, 수정, 삭제 및 서명을 조회하세요.</p>
+        </div>
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+          <button class="btn btn-secondary" onclick="app.openQRModal()">
+            📱 QR코드 공유
+          </button>
+          <button class="btn btn-success" onclick="app.exportToExcel()">
+            📥 엑셀(CSV) 다운로드
+          </button>
+          <button class="btn btn-primary" onclick="app.navigate('print')">
+            🖨️ 등록부 인쇄
+          </button>
+        </div>
+      </div>
+
+      <!-- Management Toolbar -->
+      <div class="table-toolbar">
+        <div style="display: flex; align-items: center; gap: 0.75rem; flex: 1; flex-wrap: wrap;">
+          <div style="min-width: 220px;">
+            <label class="form-label" style="margin-bottom: 0.2rem; font-size: 0.8rem;">관리할 행사 선택</label>
+            <select id="manage-event-switcher" class="form-control" onchange="app.changeActiveEvent(this.value, 'manage')">
+              <!-- Event options -->
+            </select>
+          </div>
+          <div class="search-box" style="margin-top: 1.2rem;">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="manage-search-input" class="form-control search-input" placeholder="이름, 연락처, 세부 정보 검색..." oninput="app.renderManagementTable()">
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 1rem; margin-top: 1.2rem;">
+          <div style="font-weight: 700; font-size: 1.05rem; color: var(--primary);">
+            총 등록 인원: <span id="manage-count-badge" style="font-size: 1.3rem; color: #059669;">0</span>명
+          </div>
+          <button class="btn btn-sm btn-outline-danger" onclick="app.clearRegistrationsConfirm()">
+            🗑️ 전체 초기화
+          </button>
+        </div>
+      </div>
+
+      <!-- Attendees Table -->
+      <div class="table-container">
+        <table class="roster-table" id="manage-roster-table">
+          <thead>
+            <tr id="manage-table-header-row">
+              <!-- Dynamically rendered headers -->
+            </tr>
+          </thead>
+          <tbody id="manage-table-body">
+            <!-- Dynamically rendered attendees -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 6. VIEW: PRINT & EXPORT PREVIEW -->
+    <section id="view-print" class="view-section">
+      <div class="page-header no-print">
+        <div class="page-title-group">
+          <h1>등록부 인쇄 및 출력 설정</h1>
+          <p>출력할 항목을 선택하고 A4 용지 규격에 맞춰 미리보기를 확인한 뒤 즉시 인쇄하거나 PDF로 저장하세요.</p>
+        </div>
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-secondary" onclick="app.navigate('manage')">← 관리 화면으로</button>
+          <button class="btn btn-success" onclick="app.exportToExcel()">📥 엑셀(CSV) 저장</button>
+          <button class="btn btn-lg btn-primary" onclick="window.print()">🖨️ 인쇄하기 / PDF 저장</button>
+        </div>
+      </div>
+
+      <!-- Print Options Panel -->
+      <div class="print-options-panel no-print">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+          <h3 style="font-size: 1.05rem; font-weight: 700;">출력 옵션 설정</h3>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <label class="form-label" style="margin-bottom: 0; font-size: 0.9rem;">대상 행사:</label>
+            <select id="print-event-switcher" class="form-control" style="width: auto;" onchange="app.changeActiveEvent(this.value, 'print')">
+              <!-- Event options -->
+            </select>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-wrap: wrap; gap: 1.25rem;">
+          <label class="field-checkbox-item">
+            <input type="checkbox" id="print-opt-title" checked onchange="app.renderPrintPreview()">
+            <span>행사명 표시</span>
+          </label>
+          <label class="field-checkbox-item">
+            <input type="checkbox" id="print-opt-meta" checked onchange="app.renderPrintPreview()">
+            <span>일시 및 장소 표시</span>
+          </label>
+          <label class="field-checkbox-item">
+            <input type="checkbox" id="print-opt-signbox" checked onchange="app.renderPrintPreview()">
+            <span>결재란(확인란) 표시</span>
+          </label>
+          <label class="field-checkbox-item">
+            <input type="checkbox" id="print-opt-phone" checked onchange="app.renderPrintPreview()">
+            <span>전화번호 표시</span>
+          </label>
+          <label class="field-checkbox-item">
+            <input type="checkbox" id="print-opt-time" checked onchange="app.renderPrintPreview()">
+            <span>입력 시간 표시</span>
+          </label>
+          <label class="field-checkbox-item">
+            <input type="checkbox" id="print-opt-signature" checked onchange="app.renderPrintPreview()">
+            <span>자필 서명 이미지 표시</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Live A4 Print Paper Preview Container -->
+      <div id="print-preview-container">
+        <!-- Rendered by app.renderPrintPreview() -->
+      </div>
+    </section>
+
+  </main>
+
+  <!-- =======================================================================
+       Print Only Area (Activated during window.print())
+       ======================================================================= -->
+  <div id="print-area"></div>
+
+  <!-- =======================================================================
+       Modals
+       ======================================================================= -->
+
+  <!-- Modal: QR Code & Mobile Registration Link -->
+  <div class="modal-backdrop" id="modal-qr">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">📱 스마트폰 등록용 QR코드</h3>
+        <button class="modal-close" onclick="app.closeModal('modal-qr')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="qr-container">
+          <p style="font-size: 0.95rem; color: #475569; margin-bottom: 1rem;">
+            참가자가 스마트폰 카메라로 QR코드를 스캔하면 본인의 폰에서 바로 등록할 수 있습니다.
+          </p>
+          <div class="qr-canvas-box" id="qr-code-mount"></div>
+          
+          <h4 id="qr-modal-event-title" style="font-weight: 700; margin-bottom: 0.5rem; color: #1e293b;">행사명</h4>
+          
+          <div class="qr-link-copy">
+            <input type="text" id="qr-share-url-input" class="form-control" readonly style="font-size: 0.85rem;">
+            <button class="btn btn-secondary" onclick="app.copyShareUrl()">복사</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-primary" onclick="app.printQRPages()">🖨️ QR 안내 포스터 인쇄</button>
+        <button class="btn btn-primary" onclick="app.closeModal('modal-qr')">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Duplicate Registration Warning -->
+  <div class="modal-backdrop" id="modal-duplicate">
+    <div class="modal-dialog">
+      <div class="modal-header" style="background-color: #fffbeb;">
+        <h3 class="modal-title" style="color: #b45309;">⚠️ 중복 등록 확인</h3>
+        <button class="modal-close" onclick="app.closeModal('modal-duplicate')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 1.05rem; color: #1e293b; margin-bottom: 1rem;">
+          동일한 성명 또는 연락처로 이미 등록된 내역이 있습니다.
+        </p>
+        <div style="background-color: #f8fafc; padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-color);" id="duplicate-info-box">
+          <!-- Duplicate info rendered here -->
+        </div>
+        <p style="font-size: 0.95rem; color: #64748b; margin-top: 1rem;">
+          새로운 참가자로 계속 등록하시겠습니까?
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="app.closeModal('modal-duplicate')">취소</button>
+        <button class="btn btn-warning" onclick="app.forceSubmitRegistration()">계속 등록하기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Edit Attendee -->
+  <div class="modal-backdrop" id="modal-edit-attendee">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">참가자 등록 정보 수정</h3>
+        <button class="modal-close" onclick="app.closeModal('modal-edit-attendee')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-edit-attendee" onsubmit="event.preventDefault(); app.saveAttendeeEdit();">
+          <input type="hidden" id="edit-reg-id" value="">
+          <div id="edit-fields-mount">
+            <!-- Dynamically populated edit inputs -->
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="app.closeModal('modal-edit-attendee')">취소</button>
+        <button class="btn btn-primary" onclick="app.saveAttendeeEdit()">저장</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Clone Event -->
+  <div class="modal-backdrop" id="modal-clone-event">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">📋 등록부 복사하여 새로 만들기</h3>
+        <button class="modal-close" onclick="app.closeModal('modal-clone-event')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.9rem; color: #64748b; margin-bottom: 1rem;">
+          기존 등록부의 입력 항목 설정과 디자인을 그대로 복사하고, 행사명과 일시만 새로 지정하여 새 등록부를 생성합니다.
+        </p>
+        <input type="hidden" id="clone-source-event-id" value="">
+        
+        <div class="form-group">
+          <label class="form-label" for="clone-new-title">새 행사명 <span class="required-badge">*</span></label>
+          <input type="text" id="clone-new-title" class="form-control" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="clone-new-date">새 행사 날짜 <span class="required-badge">*</span></label>
+          <input type="date" id="clone-new-date" class="form-control" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="clone-new-location">새 행사 장소</label>
+          <input type="text" id="clone-new-location" class="form-control">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="app.closeModal('modal-clone-event')">취소</button>
+        <button class="btn btn-primary" onclick="app.executeCloneEvent()">복사본 생성</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Zoom Signature -->
+  <div class="modal-backdrop" id="modal-signature-zoom">
+    <div class="modal-dialog" style="max-width: 440px;">
+      <div class="modal-header">
+        <h3 class="modal-title" id="zoom-signature-name">자필 서명 확인</h3>
+        <button class="modal-close" onclick="app.closeModal('modal-signature-zoom')">&times;</button>
+      </div>
+      <div class="modal-body" style="text-align: center;">
+        <img id="zoom-signature-img" src="" alt="서명 이미지" style="max-width: 100%; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; background: white;">
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" onclick="app.closeModal('modal-signature-zoom')">확인</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Backup & Restore -->
+  <div class="modal-backdrop" id="modal-backup">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">💾 데이터 백업 및 복원</h3>
+        <button class="modal-close" onclick="app.closeModal('modal-backup')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div style="margin-bottom: 1.5rem;">
+          <h4 style="font-size: 1rem; font-weight: 700; margin-bottom: 0.4rem;">전체 데이터 백업 (JSON 다운로드)</h4>
+          <p style="font-size: 0.85rem; color: #64748b; margin-bottom: 0.75rem;">
+            등록된 모든 행사와 참가자 데이터를 하나의 JSON 백업 파일로 다운로드합니다.
+          </p>
+          <button class="btn btn-outline-primary" onclick="app.downloadBackupJSON()">
+            📥 백업 파일 다운로드
+          </button>
+        </div>
+
+        <hr style="border: none; border-top: 1px solid var(--border-color); margin: 1.25rem 0;">
+
+        <div>
+          <h4 style="font-size: 1rem; font-weight: 700; margin-bottom: 0.4rem;">데이터 복원 (JSON 파일 업로드)</h4>
+          <p style="font-size: 0.85rem; color: #64748b; margin-bottom: 0.75rem;">
+            이전에 백업한 JSON 파일을 업로드하여 데이터를 복원합니다.
+          </p>
+          <input type="file" id="backup-file-input" accept=".json" class="form-control" style="margin-bottom: 0.75rem;" onchange="app.handleBackupFileUpload(event)">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" onclick="app.closeModal('modal-backup')">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- Scripts -->
+  <script src="js/qrcode-generator.js"></script>
+  <script src="js/signature.js"></script>
+  <script src="js/sample-data.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
