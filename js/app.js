@@ -41,6 +41,15 @@ class SmartEventApp {
     // Hash routing listener
     window.addEventListener('hashchange', () => this.handleRoute());
 
+    // Window resize listener for responsive title fit
+    window.addEventListener('resize', () => {
+      if (this.currentView === 'register') {
+        const activeId = window.rosterStorage.getActiveEventId();
+        const ev = window.rosterStorage.getEventById(activeId);
+        if (ev) this.autoFitKioskTitle(ev.title);
+      }
+    });
+
     // Initial route handling or default view
     this.handleRoute();
     this.updateBadgesAndCounters();
@@ -723,7 +732,7 @@ class SmartEventApp {
     const targetInfo = TARGET_PRESETS[eventData.target] || { name: '참가자' };
     const regCount = window.rosterStorage.getRegistrationCount(eventData.id);
 
-    if (titleEl) titleEl.textContent = eventData.title;
+    this.autoFitKioskTitle(eventData.title);
     if (tagEl) tagEl.textContent = `${targetInfo.name} 등록부`;
     if (dateEl) dateEl.innerHTML = `📅 ${eventData.date} ${eventData.time ? `(${eventData.time})` : ''}`;
     if (locEl) locEl.innerHTML = `📍 ${this._escapeHtml(eventData.location)}`;
@@ -832,6 +841,43 @@ class SmartEventApp {
         signContainer.style.display = 'none';
       }
     }
+  }
+
+  autoFitKioskTitle(titleText) {
+    const titleEl = document.getElementById('kiosk-event-title');
+    if (!titleEl) return;
+
+    titleEl.textContent = titleText || '';
+    titleEl.style.whiteSpace = 'nowrap';
+    titleEl.style.overflow = 'hidden';
+    titleEl.style.textOverflow = 'ellipsis';
+    titleEl.style.display = 'block';
+
+    const len = (titleText || '').length;
+    if (len <= 16) {
+      titleEl.style.fontSize = '1.85rem';
+    } else if (len <= 26) {
+      titleEl.style.fontSize = '1.5rem';
+    } else if (len <= 38) {
+      titleEl.style.fontSize = '1.25rem';
+    } else if (len <= 50) {
+      titleEl.style.fontSize = '1.05rem';
+    } else {
+      titleEl.style.fontSize = '0.92rem';
+    }
+
+    // Precise calculation based on container clientWidth
+    requestAnimationFrame(() => {
+      const banner = titleEl.parentElement;
+      if (!banner) return;
+      const availableWidth = banner.clientWidth - 48;
+      if (titleEl.scrollWidth > availableWidth && availableWidth > 80) {
+        const currentPx = parseFloat(window.getComputedStyle(titleEl).fontSize) || 24;
+        const ratio = availableWidth / titleEl.scrollWidth;
+        const targetPx = Math.max(12, Math.floor(currentPx * ratio * 0.96));
+        titleEl.style.fontSize = `${targetPx}px`;
+      }
+    });
   }
 
   initSignaturePad() {
@@ -1221,6 +1267,17 @@ class SmartEventApp {
     printArea.innerHTML = rosterHTML;
   }
 
+  _getAutoTitleFontSize(title) {
+    const len = (title || '').length;
+    if (len <= 14) return '22pt';
+    if (len <= 22) return '19pt';
+    if (len <= 32) return '16.5pt';
+    if (len <= 42) return '14pt';
+    if (len <= 54) return '12pt';
+    if (len <= 68) return '11pt';
+    return '10pt';
+  }
+
   _buildRosterHTML(eventData, regs = [], isBlank = false, blankRows = 20) {
     if (!eventData) return '';
 
@@ -1295,11 +1352,13 @@ class SmartEventApp {
     }
 
     const tableClass = isBlank ? 'print-table blank-table' : 'print-table';
+    const fullTitleText = `${eventData.title || ''} ${isBlank ? '등록부 (수기용)' : '등록부'}`;
+    const titleFontSize = this._getAutoTitleFontSize(fullTitleText);
 
     return `
       <div class="print-preview-paper">
         <div class="print-roster-header">
-          ${optTitle ? `<div class="print-roster-title">${this._escapeHtml(eventData.title)} ${isBlank ? '등록부 (수기용)' : '등록부'}</div>` : ''}
+          ${optTitle ? `<div class="print-roster-title" style="font-size: ${titleFontSize};">${this._escapeHtml(fullTitleText)}</div>` : ''}
           ${optMeta ? `
             <div class="print-roster-meta">
               <span><strong>일시:</strong> ${eventData.date} ${eventData.time ? `(${eventData.time})` : ''}</span>
@@ -1447,9 +1506,11 @@ class SmartEventApp {
     const printArea = document.getElementById('print-area');
     if (!printArea) return;
 
+    const qrTitleSize = this._getAutoTitleFontSize(eventData.title);
+
     printArea.innerHTML = `
-      <div class="print-preview-paper" style="text-align: center; padding: 4cm 2cm;">
-        <div style="font-size: 28pt; font-weight: 800; margin-bottom: 1rem; color: #1e3a8a;">
+      <div class="print-preview-paper" style="text-align: center; padding: 3cm 2cm;">
+        <div style="font-size: ${qrTitleSize}; font-weight: 800; margin-bottom: 1rem; color: #1e3a8a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
           ${this._escapeHtml(eventData.title)}
         </div>
         <div style="font-size: 20pt; font-weight: 700; color: #334155; margin-bottom: 2rem;">
