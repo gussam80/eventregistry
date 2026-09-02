@@ -1139,39 +1139,6 @@ textarea.form-control {
   border-bottom: 2px solid #000000;
 }
 
-/* Official Approval Box (결재란) */
-.approval-box {
-  position: absolute;
-  right: 0;
-  top: 0;
-  border: 1px solid #000000;
-  display: table;
-  border-collapse: collapse;
-  font-size: 9pt;
-  text-align: center;
-}
-
-.approval-box th, .approval-box td {
-  border: 1px solid #000000;
-  padding: 4px 8px;
-}
-
-.approval-side-header {
-  width: 20px;
-  background-color: #f1f5f9;
-  font-weight: 700;
-  vertical-align: middle;
-}
-
-.approval-role-header {
-  height: 24px;
-  width: 60px;
-}
-
-.approval-sign-area {
-  height: 50px;
-}
-
 /* Print Roster Table */
 .print-table {
   width: 100%;
@@ -1202,6 +1169,27 @@ textarea.form-control {
   max-width: 80px;
   display: inline-block;
   vertical-align: middle;
+}
+
+/* Blank Table for Handwriting */
+.print-table.blank-table td {
+  height: 36px;
+  min-height: 36px;
+}
+
+.print-table.blank-table td.seq-cell {
+  font-weight: 700;
+  color: #334155;
+  background-color: #fcfcfc;
+}
+
+.blank-preview-scroll-wrapper {
+  max-height: 520px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background-color: #f1f5f9;
+  padding: 1.5rem 1rem;
 }
 
 .print-footer {

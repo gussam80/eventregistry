@@ -15,23 +15,32 @@ class EventStorage {
   }
 
   _initStorage() {
-    if (!localStorage.getItem(STORAGE_KEYS.EVENTS)) {
+    const rawEvents = localStorage.getItem(STORAGE_KEYS.EVENTS);
+    if (!rawEvents) {
       this.resetToSampleData();
+    } else {
+      try {
+        const events = JSON.parse(rawEvents);
+        // Clean up any legacy sample events if previously stored
+        if (Array.isArray(events) && events.some(e => e.id && e.id.startsWith('evt_sample_'))) {
+          this.resetToSampleData();
+        }
+      } catch (e) {
+        this.resetToSampleData();
+      }
     }
   }
 
-  // Reset to initial sample data
+  // Reset to initial clean empty state
   resetToSampleData() {
     try {
-      localStorage.setItem(STORAGE_KEYS.EVENTS, JSON.stringify(INITIAL_SAMPLE_DATA.events));
-      localStorage.setItem(STORAGE_KEYS.REGISTRATIONS, JSON.stringify(INITIAL_SAMPLE_DATA.registrations));
-      if (INITIAL_SAMPLE_DATA.events.length > 0) {
-        localStorage.setItem(STORAGE_KEYS.CURRENT_EVENT_ID, INITIAL_SAMPLE_DATA.events[0].id);
-      }
+      localStorage.setItem(STORAGE_KEYS.EVENTS, JSON.stringify(INITIAL_SAMPLE_DATA.events || []));
+      localStorage.setItem(STORAGE_KEYS.REGISTRATIONS, JSON.stringify(INITIAL_SAMPLE_DATA.registrations || []));
+      localStorage.removeItem(STORAGE_KEYS.CURRENT_EVENT_ID);
       this._emitChange('all');
       return true;
     } catch (e) {
-      console.error('Failed to initialize sample data:', e);
+      console.error('Failed to reset data:', e);
       return false;
     }
   }
@@ -307,6 +316,8 @@ class EventStorage {
       localStorage.setItem(STORAGE_KEYS.REGISTRATIONS, JSON.stringify(parsed.registrations || []));
       if (parsed.events.length > 0) {
         this.setActiveEventId(parsed.events[0].id);
+      } else {
+        this.setActiveEventId(null);
       }
       this._emitChange('all');
       return { success: true, eventCount: parsed.events.length, regCount: (parsed.registrations || []).length };

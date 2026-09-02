@@ -11,6 +11,8 @@ class SmartEventApp {
     this.pendingRegistrationData = null;
     this.kioskCountdownTimer = null;
     this.customFieldCounter = 0;
+    this.printMode = 'registered';
+    this.currentBuilderConfig = null;
 
     this.init();
   }
@@ -376,6 +378,103 @@ class SmartEventApp {
     }
   }
 
+  getCurrentBuilderConfig() {
+    const idInput = document.getElementById('builder-event-id');
+    const titleInput = document.getElementById('builder-title');
+    const dateInput = document.getElementById('builder-date');
+    const timeInput = document.getElementById('builder-time');
+    const locationInput = document.getElementById('builder-location');
+    const descInput = document.getElementById('builder-description');
+
+    const selectedTargetCard = document.querySelector('.target-preset-card.selected');
+    const target = selectedTargetCard ? selectedTargetCard.getAttribute('data-target') : 'parent';
+
+    const preset = TARGET_PRESETS[target] || TARGET_PRESETS.parent;
+    const standardFields = [];
+    document.querySelectorAll('#builder-standard-fields input[type="checkbox"]').forEach(cb => {
+      const fId = cb.getAttribute('data-field-id');
+      const def = preset.fields.find(pf => pf.id === fId) || {};
+      standardFields.push({
+        id: fId,
+        label: cb.getAttribute('data-field-label'),
+        type: cb.getAttribute('data-field-type'),
+        placeholder: def.placeholder || '',
+        options: def.options || [],
+        required: def.required || false,
+        enabled: cb.checked,
+        auto: def.auto || false
+      });
+    });
+
+    const customFields = [];
+    document.querySelectorAll('#builder-custom-fields-list .custom-field-row').forEach((row, idx) => {
+      const labelInput = row.querySelector('.custom-field-label');
+      const typeSelect = row.querySelector('.custom-field-type');
+      const reqCb = row.querySelector('.custom-field-required');
+      const optInput = row.querySelector('.custom-field-options');
+
+      if (labelInput && labelInput.value.trim()) {
+        const cType = typeSelect.value;
+        const options = (cType === 'select' && optInput)
+          ? optInput.value.split(',').map(s => s.trim()).filter(Boolean)
+          : [];
+
+        customFields.push({
+          id: `cust_${idx + 1}_${Date.now().toString(36)}`,
+          label: labelInput.value.trim(),
+          type: cType,
+          required: reqCb.checked,
+          enabled: true,
+          options: options
+        });
+      }
+    });
+
+    const title = (titleInput && titleInput.value.trim()) ? titleInput.value.trim() : '행사 등록부';
+    const date = (dateInput && dateInput.value) ? dateInput.value : new Date().toISOString().split('T')[0];
+    const time = (timeInput && timeInput.value) ? timeInput.value : '';
+    const location = (locationInput && locationInput.value.trim()) ? locationInput.value.trim() : '장소 미지정';
+    const description = (descInput && descInput.value.trim()) ? descInput.value.trim() : '';
+
+    return {
+      id: (idInput && idInput.value) ? idInput.value : 'temp_builder_event',
+      title,
+      date,
+      time,
+      location,
+      description,
+      target,
+      fields: standardFields,
+      customFields
+    };
+  }
+
+  openBlankPrintModalFromBuilder() {
+    this.currentBuilderConfig = this.getCurrentBuilderConfig();
+    this.renderBlankPrintModalPreview();
+    this.openModal('modal-blank-print');
+  }
+
+  renderBlankPrintModalPreview() {
+    if (!this.currentBuilderConfig) return;
+    const rowsSelect = document.getElementById('blank-modal-rows');
+    const rowCount = parseInt(rowsSelect?.value || '20', 10);
+
+    const previewContainer = document.getElementById('blank-modal-preview-content');
+    const printArea = document.getElementById('print-area');
+
+    const html = this._buildRosterHTML(this.currentBuilderConfig, [], true, rowCount);
+    if (previewContainer) previewContainer.innerHTML = html;
+    if (printArea) printArea.innerHTML = html;
+  }
+
+  executeBlankPrintFromModal() {
+    this.renderBlankPrintModalPreview();
+    setTimeout(() => {
+      window.print();
+    }, 150);
+  }
+
   saveEventForm(startKioskImmediately = false) {
     const idInput = document.getElementById('builder-event-id');
     const titleInput = document.getElementById('builder-title');
@@ -462,8 +561,7 @@ class SmartEventApp {
         showLocation: true,
         showPhone: true,
         showTimestamp: true,
-        showSignature: true,
-        showSignBox: true
+        showSignature: true
       }
     };
 
@@ -1079,6 +1177,26 @@ class SmartEventApp {
   // VIEW: PRINT & EXPORT PREVIEW
   // =========================================================================
 
+  setPrintMode(mode) {
+    this.printMode = mode;
+    const btnReg = document.getElementById('btn-print-mode-registered');
+    const btnBlank = document.getElementById('btn-print-mode-blank');
+    const rowsContainer = document.getElementById('print-blank-rows-container');
+
+    if (btnReg && btnBlank) {
+      if (mode === 'blank') {
+        btnReg.className = 'btn btn-sm btn-secondary';
+        btnBlank.className = 'btn btn-sm btn-primary';
+        if (rowsContainer) rowsContainer.style.display = 'flex';
+      } else {
+        btnReg.className = 'btn btn-sm btn-primary';
+        btnBlank.className = 'btn btn-sm btn-secondary';
+        if (rowsContainer) rowsContainer.style.display = 'none';
+      }
+    }
+    this.renderPrintPreview();
+  }
+
   renderPrintPreview() {
     const activeId = window.rosterStorage.getActiveEventId();
     const eventData = window.rosterStorage.getEventById(activeId);
@@ -1094,90 +1212,104 @@ class SmartEventApp {
       return;
     }
 
+    const isBlank = this.printMode === 'blank';
+    const rowsSelect = document.getElementById('print-blank-rows-select');
+    const rowCount = parseInt(rowsSelect?.value || '20', 10);
+
+    const rosterHTML = this._buildRosterHTML(eventData, regs, isBlank, rowCount);
+    container.innerHTML = rosterHTML;
+    printArea.innerHTML = rosterHTML;
+  }
+
+  _buildRosterHTML(eventData, regs = [], isBlank = false, blankRows = 20) {
+    if (!eventData) return '';
+
     // Read print options
     const optTitle = document.getElementById('print-opt-title')?.checked ?? true;
     const optMeta = document.getElementById('print-opt-meta')?.checked ?? true;
-    const optSignBox = document.getElementById('print-opt-signbox')?.checked ?? true;
     const optPhone = document.getElementById('print-opt-phone')?.checked ?? true;
     const optTime = document.getElementById('print-opt-time')?.checked ?? true;
     const optSignature = document.getElementById('print-opt-signature')?.checked ?? true;
 
     // Columns to print
-    const columns = [{ id: 'seq', label: '연번' }];
+    const columns = [{ id: 'seq', label: '연번', width: '50px' }];
 
     (eventData.fields || []).forEach(f => {
       if (!f.enabled || f.id === 'seq') return;
       if (f.id === 'phone' && !optPhone) return;
-      if (f.id === 'timestamp' && !optTime) return;
+      if (f.id === 'timestamp' && !optTime && !isBlank) return;
+      if (f.id === 'timestamp' && isBlank) {
+        columns.push({ id: f.id, label: '등록시간', type: f.type, width: '90px' });
+        return;
+      }
       if (f.type === 'signature' && !optSignature) return;
-      columns.push({ id: f.id, label: f.label, type: f.type });
+
+      let colWidth = 'auto';
+      if (f.type === 'signature') colWidth = '110px';
+      else if (f.id === 'name' || f.id === 'studentName' || f.id === 'parentName') colWidth = '90px';
+      else if (f.id === 'phone') colWidth = '130px';
+
+      columns.push({ id: f.id, label: f.label, type: f.type, width: colWidth });
     });
 
     (eventData.customFields || []).forEach(cf => {
       if (cf.enabled) {
-        columns.push({ id: cf.id, label: cf.label, type: cf.type });
+        columns.push({ id: cf.id, label: cf.label, type: cf.type, width: 'auto' });
       }
     });
 
-    // Approval Box HTML
-    const approvalHtml = optSignBox ? `
-      <table class="approval-box">
-        <tr>
-          <th rowspan="2" class="approval-side-header">결<br>재</th>
-          <th class="approval-role-header">담당</th>
-          <th class="approval-role-header">부장</th>
-          <th class="approval-role-header">교감</th>
-          <th class="approval-role-header">교장</th>
-        </tr>
-        <tr>
-          <td class="approval-sign-area"></td>
-          <td class="approval-sign-area"></td>
-          <td class="approval-sign-area"></td>
-          <td class="approval-sign-area"></td>
-        </tr>
-      </table>
-    ` : '';
-
     // Table Header HTML
-    const tableHeaderHtml = columns.map(c => `<th>${c.label}</th>`).join('');
+    const tableHeaderHtml = columns.map(c => `<th style="${c.width !== 'auto' ? `width: ${c.width};` : ''}">${c.label}</th>`).join('');
 
     // Table Rows HTML
     let tableRowsHtml = '';
-    if (regs.length === 0) {
-      tableRowsHtml = `<tr><td colspan="${columns.length}" style="text-align: center; padding: 20px;">등록된 참가자가 없습니다.</td></tr>`;
-    } else {
-      tableRowsHtml = regs.map(r => {
+    if (isBlank) {
+      // Generate blank rows for handwriting
+      for (let i = 1; i <= blankRows; i++) {
         const cells = columns.map(col => {
-          if (col.id === 'seq') return `<td>${r.seq}</td>`;
-          if (col.id === 'timestamp') return `<td>${r.registeredAt || '-'}</td>`;
-          if (col.id === 'signature') {
-            if (r.signatureUrl) {
-              return `<td><img src="${r.signatureUrl}" class="print-signature-img" alt="서명"></td>`;
-            }
-            return `<td>(서명)</td>`;
-          }
-          const val = r.data ? r.data[col.id] : '';
-          return `<td>${this._escapeHtml(val || '-')}</td>`;
+          if (col.id === 'seq') return `<td class="seq-cell">${i}</td>`;
+          return `<td></td>`;
         }).join('');
-        return `<tr>${cells}</tr>`;
-      }).join('');
+        tableRowsHtml += `<tr>${cells}</tr>`;
+      }
+    } else {
+      if (regs.length === 0) {
+        tableRowsHtml = `<tr><td colspan="${columns.length}" style="text-align: center; padding: 25px; color: #64748b;">등록된 참가자가 없습니다.</td></tr>`;
+      } else {
+        tableRowsHtml = regs.map(r => {
+          const cells = columns.map(col => {
+            if (col.id === 'seq') return `<td class="seq-cell">${r.seq}</td>`;
+            if (col.id === 'timestamp') return `<td>${r.registeredAt || '-'}</td>`;
+            if (col.id === 'signature') {
+              if (r.signatureUrl) {
+                return `<td><img src="${r.signatureUrl}" class="print-signature-img" alt="서명"></td>`;
+              }
+              return `<td>(서명)</td>`;
+            }
+            const val = r.data ? r.data[col.id] : '';
+            return `<td>${this._escapeHtml(val || '-')}</td>`;
+          }).join('');
+          return `<tr>${cells}</tr>`;
+        }).join('');
+      }
     }
 
-    const rosterHTML = `
+    const tableClass = isBlank ? 'print-table blank-table' : 'print-table';
+
+    return `
       <div class="print-preview-paper">
         <div class="print-roster-header">
-          ${approvalHtml}
-          ${optTitle ? `<div class="print-roster-title">${this._escapeHtml(eventData.title)} 등록부</div>` : ''}
+          ${optTitle ? `<div class="print-roster-title">${this._escapeHtml(eventData.title)} ${isBlank ? '등록부 (수기용)' : '등록부'}</div>` : ''}
           ${optMeta ? `
             <div class="print-roster-meta">
               <span><strong>일시:</strong> ${eventData.date} ${eventData.time ? `(${eventData.time})` : ''}</span>
               <span><strong>장소:</strong> ${this._escapeHtml(eventData.location)}</span>
-              <span><strong>총 참가 인원:</strong> ${regs.length}명</span>
+              <span><strong>${isBlank ? '총 인쇄 행 수:' : '총 참가 인원:'}</strong> ${isBlank ? `${blankRows}행` : `${regs.length}명`}</span>
             </div>
           ` : ''}
         </div>
 
-        <table class="print-table">
+        <table class="${tableClass}">
           <thead>
             <tr>${tableHeaderHtml}</tr>
           </thead>
@@ -1191,9 +1323,6 @@ class SmartEventApp {
         </div>
       </div>
     `;
-
-    container.innerHTML = rosterHTML;
-    printArea.innerHTML = rosterHTML;
   }
 
   // =========================================================================
@@ -1432,9 +1561,9 @@ class SmartEventApp {
   }
 
   resetSampleDataConfirm() {
-    if (confirm('모든 데이터를 초기 예시 샘플 데이터로 복원하시겠습니까?\n(현재 작성된 모든 내역은 초기화됩니다)')) {
+    if (confirm('모든 행사 및 등록자 데이터를 완전히 초기화하시겠습니까?\n(현재 작성된 모든 내역이 삭제되고 빈 상태로 초기화됩니다)')) {
       window.rosterStorage.resetToSampleData();
-      this.showToast('샘플 데이터가 복원되었습니다.', 'success');
+      this.showToast('모든 데이터가 초기화되었습니다.', 'success');
       this.navigate('home');
     }
   }
