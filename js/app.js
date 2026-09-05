@@ -13,6 +13,7 @@ class SmartEventApp {
     this.customFieldCounter = 0;
     this.printMode = 'registered';
     this.currentBuilderConfig = null;
+    this.duplicateOnlyFilter = false;
 
     this.init();
   }
@@ -147,7 +148,7 @@ class SmartEventApp {
     const events = window.rosterStorage.getEvents();
     const activeId = window.rosterStorage.getActiveEventId();
 
-    const switchers = ['kiosk-event-switcher', 'manage-event-switcher', 'print-event-switcher'];
+    const switchers = ['home-event-switcher', 'kiosk-event-switcher', 'manage-event-switcher', 'print-event-switcher'];
     switchers.forEach(swId => {
       const select = document.getElementById(swId);
       if (!select) return;
@@ -174,6 +175,7 @@ class SmartEventApp {
     window.rosterStorage.setActiveEventId(eventId);
 
     this.updateBadgesAndCounters();
+    if (viewToRefresh === 'home' || this.currentView === 'home') this.renderDashboard();
     if (viewToRefresh === 'register' || this.currentView === 'register') this.renderKioskView();
     if (viewToRefresh === 'manage' || this.currentView === 'manage') this.renderManagementTable();
     if (viewToRefresh === 'print' || this.currentView === 'print') this.renderPrintPreview();
@@ -187,30 +189,42 @@ class SmartEventApp {
     const events = window.rosterStorage.getEvents();
     const activeId = window.rosterStorage.getActiveEventId();
     const activeEvent = window.rosterStorage.getEventById(activeId) || (events.length > 0 ? events[0] : null);
+    const allRegs = window.rosterStorage.getAllRegistrations();
 
-    // Update summary stats
+    // 1. [전체 등록 통계] (Overall Statistics)
     const totalEventsEl = document.getElementById('stat-total-events');
-    const activeRegsEl = document.getElementById('stat-active-registrations');
+    const totalRegsEl = document.getElementById('stat-total-registrations');
+
+    if (totalEventsEl) totalEventsEl.textContent = `${events.length}개`;
+    if (totalRegsEl) totalRegsEl.textContent = `${allRegs.length}명`;
+
+    // 2. [현재 선택된 행사 통계] (Current Event Focus)
     const activeTitleEl = document.getElementById('stat-active-event-title');
+    const activeRegsEl = document.getElementById('stat-active-registrations');
     const signRateEl = document.getElementById('stat-signature-rate');
 
-    if (totalEventsEl) totalEventsEl.textContent = events.length;
-    if (activeRegsEl) {
-      const count = activeEvent ? window.rosterStorage.getRegistrationCount(activeEvent.id) : 0;
-      activeRegsEl.textContent = `${count}명`;
-    }
-    if (activeTitleEl) {
-      activeTitleEl.textContent = activeEvent ? activeEvent.title : '등록부 없음';
-    }
-    if (signRateEl) {
-      const allRegs = window.rosterStorage.getAllRegistrations();
-      if (allRegs.length === 0) {
-        signRateEl.textContent = '100%';
-      } else {
-        const signedCount = allRegs.filter(r => !!r.signatureUrl).length;
-        const rate = Math.round((signedCount / allRegs.length) * 100);
-        signRateEl.textContent = `${rate}%`;
+    if (activeEvent) {
+      if (activeTitleEl) {
+        activeTitleEl.textContent = activeEvent.title;
+        activeTitleEl.title = `${activeEvent.title} (${activeEvent.date})`;
       }
+
+      const activeRegs = window.rosterStorage.getRegistrationsByEvent(activeEvent.id);
+      if (activeRegsEl) activeRegsEl.textContent = `${activeRegs.length}명`;
+
+      if (signRateEl) {
+        if (activeRegs.length === 0) {
+          signRateEl.textContent = '0%';
+        } else {
+          const signedCount = activeRegs.filter(r => !!r.signatureUrl).length;
+          const rate = Math.round((signedCount / activeRegs.length) * 100);
+          signRateEl.textContent = `${rate}%`;
+        }
+      }
+    } else {
+      if (activeTitleEl) activeTitleEl.textContent = '선택된 행사 없음';
+      if (activeRegsEl) activeRegsEl.textContent = '0명';
+      if (signRateEl) signRateEl.textContent = '0%';
     }
 
     // Render Recent Event Cards
@@ -1041,6 +1055,53 @@ class SmartEventApp {
   // VIEW: MANAGEMENT & ATTENDEE LIST
   // =========================================================================
 
+  toggleDuplicateFilter() {
+    this.duplicateOnlyFilter = !this.duplicateOnlyFilter;
+    const btn = document.getElementById('manage-duplicate-filter-btn');
+    if (btn) {
+      btn.classList.toggle('active', this.duplicateOnlyFilter);
+    }
+    this.renderManagementTable();
+  }
+
+  autoCleanDuplicatesConfirm() {
+    const activeId = window.rosterStorage.getActiveEventId();
+    const regs = window.rosterStorage.getRegistrationsByEvent(activeId);
+
+    const seenNames = new Set();
+    const seenPhones = new Set();
+    const toDelete = [];
+
+    regs.forEach(r => {
+      const d = r.data || {};
+      const name = (d.name || d.parentName || d.studentName || '').trim().toLowerCase();
+      const phone = (d.phone || '').replace(/[^0-9]/g, '');
+
+      let isDup = false;
+      if (phone && seenPhones.has(phone)) isDup = true;
+      if (name && seenNames.has(name)) isDup = true;
+
+      if (isDup) {
+        toDelete.push({ id: r.id, name: d.name || d.parentName || d.studentName || '참가자', seq: r.seq });
+      } else {
+        if (name) seenNames.add(name);
+        if (phone) seenPhones.add(phone);
+      }
+    });
+
+    if (toDelete.length === 0) {
+      this.showToast('중복 등록된 참가자가 없습니다.', 'info');
+      return;
+    }
+
+    if (confirm(`중복 등록된 ${toDelete.length}건의 데이터를 자동 정리하시겠습니까?\n\n- 최초 등록본(1건)만 유지하고, 이후 중복 등록된 내역을 일괄 삭제합니다.\n- 삭제 후 모든 참가자의 연번(등록번호)이 1번부터 자동으로 재정렬됩니다.`)) {
+      toDelete.forEach(item => window.rosterStorage.deleteRegistration(item.id));
+      this.showToast(`중복 등록 ${toDelete.length}건이 성공적으로 정리되었습니다.`, 'success');
+      this.duplicateOnlyFilter = false;
+      this.renderManagementTable();
+    }
+  }
+
   renderManagementTable() {
     const activeId = window.rosterStorage.getActiveEventId();
     const eventData = window.rosterStorage.getEventById(activeId);
@@ -1050,10 +1111,49 @@ class SmartEventApp {
     const headerRow = document.getElementById('manage-table-header-row');
     const body = document.getElementById('manage-table-body');
     const countBadge = document.getElementById('manage-count-badge');
+    const dupFilterBtn = document.getElementById('manage-duplicate-filter-btn');
+    const dupCleanBtn = document.getElementById('manage-duplicate-clean-btn');
+    const dupCountSpan = document.getElementById('manage-duplicate-count');
 
     if (countBadge) countBadge.textContent = regs.length;
 
     if (!eventData || !headerRow || !body) return;
+
+    // Detect Duplicates in current event (matching name or phone)
+    const nameCountMap = {};
+    const phoneCountMap = {};
+    regs.forEach(r => {
+      const d = r.data || {};
+      const name = (d.name || d.parentName || d.studentName || '').trim().toLowerCase();
+      const phone = (d.phone || '').replace(/[^0-9]/g, '');
+      if (name) nameCountMap[name] = (nameCountMap[name] || 0) + 1;
+      if (phone) phoneCountMap[phone] = (phoneCountMap[phone] || 0) + 1;
+    });
+
+    const duplicateIdSet = new Set();
+    regs.forEach(r => {
+      const d = r.data || {};
+      const name = (d.name || d.parentName || d.studentName || '').trim().toLowerCase();
+      const phone = (d.phone || '').replace(/[^0-9]/g, '');
+      if ((name && nameCountMap[name] > 1) || (phone && phoneCountMap[phone] > 1)) {
+        duplicateIdSet.add(r.id);
+      }
+    });
+
+    // Update duplicate buttons in toolbar
+    if (duplicateIdSet.size > 0) {
+      if (dupFilterBtn) {
+        dupFilterBtn.style.display = 'inline-flex';
+        if (dupCountSpan) dupCountSpan.textContent = duplicateIdSet.size;
+      }
+      if (dupCleanBtn) {
+        dupCleanBtn.style.display = 'inline-flex';
+      }
+    } else {
+      if (dupFilterBtn) dupFilterBtn.style.display = 'none';
+      if (dupCleanBtn) dupCleanBtn.style.display = 'none';
+      this.duplicateOnlyFilter = false;
+    }
 
     // Collect active visible columns
     const columns = [
@@ -1077,8 +1177,9 @@ class SmartEventApp {
     // Render Table Headers
     headerRow.innerHTML = columns.map(c => `<th ${c.id === 'seq' ? 'style="width: 50px; text-align: center;"' : ''}>${c.label}</th>`).join('');
 
-    // Filter registrations
+    // Filter registrations (search + duplicate filter)
     const filtered = regs.filter(r => {
+      if (this.duplicateOnlyFilter && !duplicateIdSet.has(r.id)) return false;
       if (!searchVal) return true;
       const dataStr = Object.values(r.data || {}).join(' ').toLowerCase();
       const timeStr = (r.registeredAt || '').toLowerCase();
@@ -1089,7 +1190,7 @@ class SmartEventApp {
       body.innerHTML = `
         <tr>
           <td colspan="${columns.length}" style="text-align: center; padding: 3rem 1rem; color: #94a3b8;">
-            ${regs.length === 0 ? '아직 등록된 참가자가 없습니다.' : '검색 결과와 일치하는 참가자가 없습니다.'}
+            ${regs.length === 0 ? '아직 등록된 참가자가 없습니다.' : (this.duplicateOnlyFilter ? '중복 등록된 참가자가 없습니다.' : '검색 결과와 일치하는 참가자가 없습니다.')}
           </td>
         </tr>
       `;
@@ -1098,6 +1199,9 @@ class SmartEventApp {
 
     // Render Rows
     body.innerHTML = filtered.map(r => {
+      const isDuplicate = duplicateIdSet.has(r.id);
+      const rowClass = isDuplicate ? 'class="row-duplicate-warning"' : '';
+
       const rowCells = columns.map(col => {
         if (col.id === 'seq') {
           return `<td class="table-seq-cell">${r.seq}</td>`;
@@ -1118,20 +1222,27 @@ class SmartEventApp {
         if (col.id === 'actions') {
           return `
             <td style="white-space: nowrap;">
-              <button class="btn btn-sm btn-secondary" onclick="app.openEditAttendeeModal('${r.id}')" title="정보 수정">✏️</button>
-              <button class="btn btn-sm btn-outline-danger" onclick="app.deleteAttendeeConfirm('${r.id}')" title="삭제">🗑️</button>
+              <button class="btn btn-sm btn-secondary" onclick="app.openEditAttendeeModal('${r.id}')" title="정보 수정">✏️ 수정</button>
+              <button class="btn btn-sm btn-outline-danger" onclick="app.deleteAttendeeConfirm('${r.id}')" title="해당 등록 내역 삭제">🗑️ 삭제</button>
             </td>
           `;
         }
 
         const val = r.data ? r.data[col.id] : '';
+        let cellContent = this._escapeHtml(val || '-');
+
+        // Add duplicate badge next to name fields if duplicated
+        if (isDuplicate && (col.id === 'name' || col.id === 'parentName' || col.id === 'studentName')) {
+          cellContent += `<span class="badge-duplicate" title="동일한 성명 또는 연락처가 중복 등록되었습니다">⚠️ 중복</span>`;
+        }
+
         if (typeof val === 'boolean') {
           return `<td>${val ? '✓ 예' : '✕ 아니오'}</td>`;
         }
-        return `<td>${this._escapeHtml(val || '-')}</td>`;
+        return `<td>${cellContent}</td>`;
       }).join('');
 
-      return `<tr>${rowCells}</tr>`;
+      return `<tr ${rowClass}>${rowCells}</tr>`;
     }).join('');
   }
 
@@ -1196,9 +1307,13 @@ class SmartEventApp {
   }
 
   deleteAttendeeConfirm(regId) {
-    if (confirm('해당 참가자 등록 내역을 삭제하시겠습니까?')) {
+    const reg = window.rosterStorage.getRegistrationById(regId);
+    const name = reg?.data?.name || reg?.data?.parentName || reg?.data?.studentName || '참가자';
+    const seq = reg?.seq ? ` (등록번호 ${reg.seq}번)` : '';
+
+    if (confirm(`[${name}] 님의 등록 내역${seq}을 삭제하시겠습니까?\n\n※ 삭제 후 나머지 참가자의 등록 번호(연번)가 1번부터 자동으로 재정렬됩니다.`)) {
       window.rosterStorage.deleteRegistration(regId);
-      this.showToast('참가자 내역이 삭제되었습니다.', 'info');
+      this.showToast(`[${name}] 등록 내역이 삭제되었습니다.`, 'info');
       this.renderManagementTable();
     }
   }
