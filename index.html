@@ -636,12 +636,26 @@
       </div>
       <div class="modal-body">
         <div class="qr-container">
-          <p style="font-size: 0.95rem; color: #475569; margin-bottom: 1rem;">
+          <p style="font-size: 0.95rem; color: #475569; margin-bottom: 0.75rem;">
             참가자가 스마트폰 카메라로 QR코드를 스캔하면 본인의 폰에서 바로 등록할 수 있습니다.
           </p>
+
+          <div id="qr-local-notice" style="display: none; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; text-align: left; font-size: 0.85rem; color: #92400e;">
+            <div style="font-weight: 700; margin-bottom: 0.35rem;">💡 스마트폰 접속 안내 (로컬 환경)</div>
+            <div>스마트폰과 PC가 <strong>동일한 Wi-Fi(공유기)</strong>에 연결되어 있어야 합니다.</div>
+            <div style="margin-top: 0.5rem; display: flex; gap: 0.4rem; align-items: center;">
+              <span style="white-space: nowrap; font-size: 0.8rem; font-weight: 600;">PC IP 주소:</span>
+              <input type="text" id="qr-custom-host-input" class="form-control" placeholder="예: 192.168.0.25:5500" style="padding: 0.25rem 0.5rem; font-size: 0.85rem;">
+              <button type="button" class="btn btn-sm btn-primary" style="white-space: nowrap; padding: 0.25rem 0.65rem;" onclick="app.applyCustomQRHost()">적용</button>
+            </div>
+          </div>
+
           <div class="qr-canvas-box" id="qr-code-mount"></div>
           
-          <h4 id="qr-modal-event-title" style="font-weight: 700; margin-bottom: 0.5rem; color: #1e293b;">행사명</h4>
+          <h4 id="qr-modal-event-title" style="font-weight: 700; margin-bottom: 0.35rem; color: #1e293b;">행사명</h4>
+          <p style="font-size: 0.8rem; color: #059669; font-weight: 600; margin-bottom: 0.75rem;">
+            ✨ 행사 설정 정보가 QR코드에 자동 내장되어 스마트폰에서 즉시 열립니다.
+          </p>
           
           <div class="qr-link-copy">
             <input type="text" id="qr-share-url-input" class="form-control" readonly style="font-size: 0.85rem;">

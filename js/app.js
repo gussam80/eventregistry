@@ -63,13 +63,27 @@ class SmartEventApp {
   handleRoute() {
     const hash = window.location.hash.slice(1) || 'home';
     const [viewName, queryString] = hash.split('?');
-    const params = new URLSearchParams(queryString || '');
+    const hashParams = new URLSearchParams(queryString || '');
+    const searchParams = new URLSearchParams(window.location.search || '');
 
-    if (params.has('id')) {
-      this.activeEventId = params.get('id');
-      window.rosterStorage.setActiveEventId(this.activeEventId);
-    } else if (params.has('event')) {
-      this.activeEventId = params.get('event');
+    // 1. QR코드나 공유 링크를 통해 edata(인코딩된 행사 데이터)가 전달된 경우 자동 복원
+    const edataParam = hashParams.get('edata') || searchParams.get('edata');
+    if (edataParam) {
+      const restoredEvent = this._decodeEventData(edataParam);
+      if (restoredEvent && restoredEvent.id) {
+        const existing = window.rosterStorage.getEventById(restoredEvent.id);
+        if (!existing) {
+          window.rosterStorage.saveEvent(restoredEvent);
+        }
+        this.activeEventId = restoredEvent.id;
+        window.rosterStorage.setActiveEventId(restoredEvent.id);
+      }
+    }
+
+    // 2. 행사 ID 파라미터 확인
+    const idParam = hashParams.get('id') || searchParams.get('id') || hashParams.get('event') || searchParams.get('event');
+    if (idParam) {
+      this.activeEventId = idParam;
       window.rosterStorage.setActiveEventId(this.activeEventId);
     }
 
@@ -1566,21 +1580,125 @@ class SmartEventApp {
   // QR CODE MODAL & PRINTABLE POSTER
   // =========================================================================
 
+  _encodeEventData(eventData) {
+    try {
+      if (!eventData) return '';
+      const slimEvent = {
+        id: eventData.id,
+        title: eventData.title,
+        date: eventData.date,
+        time: eventData.time || '',
+        location: eventData.location || '',
+        description: eventData.description || '',
+        target: eventData.target,
+        fields: (eventData.fields || []).filter(f => f.enabled).map(f => ({
+          id: f.id,
+          label: f.label,
+          type: f.type,
+          placeholder: f.placeholder || '',
+          options: f.options || [],
+          required: !!f.required,
+          enabled: true,
+          auto: !!f.auto
+        })),
+        customFields: (eventData.customFields || []).map(cf => ({
+          id: cf.id,
+          label: cf.label,
+          type: cf.type,
+          required: !!cf.required,
+          enabled: true,
+          options: cf.options || []
+        }))
+      };
+      const jsonStr = JSON.stringify(slimEvent);
+      return encodeURIComponent(btoa(unescape(encodeURIComponent(jsonStr))));
+    } catch (e) {
+      console.error('Failed to encode event data:', e);
+      return '';
+    }
+  }
+
+  _decodeEventData(encodedStr) {
+    try {
+      if (!encodedStr) return null;
+      const jsonStr = decodeURIComponent(escape(atob(decodeURIComponent(encodedStr))));
+      return JSON.parse(jsonStr);
+    } catch (e) {
+      console.error('Failed to decode event data from URL:', e);
+      return null;
+    }
+  }
+
+  _getEventRegisterUrl(eventData, customHost = null) {
+    const encodedData = this._encodeEventData(eventData);
+    let baseUrl = window.location.href.split('#')[0].split('?')[0];
+
+    if (customHost && customHost.trim()) {
+      let cleanHost = customHost.trim().replace(/^https?:\/\//, '').replace(/\/$/, '');
+      const pathName = window.location.pathname.endsWith('.html')
+        ? window.location.pathname
+        : (window.location.pathname.replace(/\/$/, '') + '/index.html');
+      baseUrl = `http://${cleanHost}${pathName.startsWith('/') ? pathName : '/' + pathName}`;
+    }
+
+    return `${baseUrl}#register?id=${eventData.id}&edata=${encodedData}`;
+  }
+
   openQRModal() {
+    const activeId = window.rosterStorage.getActiveEventId();
+    const eventData = window.rosterStorage.getEventById(activeId);
+    if (!eventData) {
+      this.showToast('선택된 행사가 없습니다.', 'warning');
+      return;
+    }
+
+    const titleEl = document.getElementById('qr-modal-event-title');
+    const noticeBox = document.getElementById('qr-local-notice');
+    const hostInput = document.getElementById('qr-custom-host-input');
+
+    if (titleEl) titleEl.textContent = eventData.title;
+
+    // Check if running on local file or localhost
+    const isLocal = window.location.protocol === 'file:' || 
+                    window.location.hostname === 'localhost' || 
+                    window.location.hostname === '127.0.0.1';
+
+    if (noticeBox) {
+      noticeBox.style.display = isLocal ? 'block' : 'none';
+      if (hostInput && !hostInput.value) {
+        const port = window.location.port ? `:${window.location.port}` : '';
+        hostInput.placeholder = `예: 192.168.0.25${port}`;
+      }
+    }
+
+    const customHost = hostInput ? hostInput.value.trim() : null;
+    this.renderCurrentQRCode(eventData, customHost);
+    this.openModal('modal-qr');
+  }
+
+  applyCustomQRHost() {
     const activeId = window.rosterStorage.getActiveEventId();
     const eventData = window.rosterStorage.getEventById(activeId);
     if (!eventData) return;
 
-    const titleEl = document.getElementById('qr-modal-event-title');
+    const hostInput = document.getElementById('qr-custom-host-input');
+    const customHost = hostInput ? hostInput.value.trim() : null;
+
+    if (!customHost) {
+      this.showToast('PC의 IP 주소(예: 192.168.0.25:5500)를 입력해 주세요.', 'warning');
+      return;
+    }
+
+    this.renderCurrentQRCode(eventData, customHost);
+    this.showToast('스마트폰 접속용 주소가 적용되었습니다.', 'success');
+  }
+
+  renderCurrentQRCode(eventData, customHost = null) {
     const urlInput = document.getElementById('qr-share-url-input');
     const mount = document.getElementById('qr-code-mount');
+    if (!eventData) return;
 
-    if (titleEl) titleEl.textContent = eventData.title;
-
-    // Create absolute URL pointing to this event
-    const baseUrl = window.location.href.split('#')[0];
-    const targetUrl = `${baseUrl}#register?id=${eventData.id}`;
-
+    const targetUrl = this._getEventRegisterUrl(eventData, customHost);
     if (urlInput) urlInput.value = targetUrl;
 
     if (mount && typeof QRCode !== 'undefined') {
@@ -1593,8 +1711,6 @@ class SmartEventApp {
         colorLight: '#ffffff'
       });
     }
-
-    this.openModal('modal-qr');
   }
 
   copyShareUrl() {
@@ -1614,8 +1730,9 @@ class SmartEventApp {
     const eventData = window.rosterStorage.getEventById(activeId);
     if (!eventData) return;
 
-    const baseUrl = window.location.href.split('#')[0];
-    const targetUrl = `${baseUrl}#register?id=${eventData.id}`;
+    const hostInput = document.getElementById('qr-custom-host-input');
+    const customHost = hostInput ? hostInput.value.trim() : null;
+    const targetUrl = this._getEventRegisterUrl(eventData, customHost);
     const qrDataUrl = QRCode.generateDataURL(targetUrl, 320);
 
     const printArea = document.getElementById('print-area');
