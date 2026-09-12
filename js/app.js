@@ -733,8 +733,25 @@ class SmartEventApp {
   // =========================================================================
 
   renderKioskView() {
-    const activeId = window.rosterStorage.getActiveEventId();
-    const eventData = window.rosterStorage.getEventById(activeId);
+    let activeId = this.activeEventId || window.rosterStorage.getActiveEventId();
+    let eventData = window.rosterStorage.getEventById(activeId);
+
+    // Safeguard: If not found in storage, decode directly from current URL edata parameter
+    if (!eventData) {
+      const hashParams = new URLSearchParams((window.location.hash.split('?')[1]) || '');
+      const searchParams = new URLSearchParams(window.location.search || '');
+      const edataParam = hashParams.get('edata') || searchParams.get('edata');
+      if (edataParam) {
+        const restored = this._decodeEventData(edataParam);
+        if (restored && restored.id) {
+          window.rosterStorage.saveEvent(restored);
+          activeId = restored.id;
+          this.activeEventId = restored.id;
+          window.rosterStorage.setActiveEventId(restored.id);
+          eventData = restored;
+        }
+      }
+    }
 
     const titleEl = document.getElementById('kiosk-event-title');
     const tagEl = document.getElementById('kiosk-target-tag');
@@ -1583,34 +1600,24 @@ class SmartEventApp {
   _encodeEventData(eventData) {
     try {
       if (!eventData) return '';
-      const slimEvent = {
-        id: eventData.id,
-        title: eventData.title,
-        date: eventData.date,
-        time: eventData.time || '',
-        location: eventData.location || '',
-        description: eventData.description || '',
-        target: eventData.target,
-        fields: (eventData.fields || []).filter(f => f.enabled).map(f => ({
-          id: f.id,
-          label: f.label,
-          type: f.type,
-          placeholder: f.placeholder || '',
-          options: f.options || [],
-          required: !!f.required,
-          enabled: true,
-          auto: !!f.auto
-        })),
-        customFields: (eventData.customFields || []).map(cf => ({
+      const slim = {
+        i: eventData.id,
+        t: eventData.title,
+        d: eventData.date,
+        tm: eventData.time || '',
+        l: eventData.location || '',
+        ds: eventData.description || '',
+        tg: eventData.target || 'parent',
+        f: (eventData.fields || []).filter(f => f.enabled).map(f => f.id),
+        cf: (eventData.customFields || []).map(cf => ({
           id: cf.id,
-          label: cf.label,
-          type: cf.type,
-          required: !!cf.required,
-          enabled: true,
-          options: cf.options || []
+          l: cf.label,
+          t: cf.type,
+          r: cf.required ? 1 : 0,
+          opt: cf.options || []
         }))
       };
-      const jsonStr = JSON.stringify(slimEvent);
+      const jsonStr = JSON.stringify(slim);
       return encodeURIComponent(btoa(unescape(encodeURIComponent(jsonStr))));
     } catch (e) {
       console.error('Failed to encode event data:', e);
@@ -1622,7 +1629,52 @@ class SmartEventApp {
     try {
       if (!encodedStr) return null;
       const jsonStr = decodeURIComponent(escape(atob(decodeURIComponent(encodedStr))));
-      return JSON.parse(jsonStr);
+      const raw = JSON.parse(jsonStr);
+
+      const targetKey = raw.tg || raw.target || 'parent';
+      const preset = TARGET_PRESETS[targetKey] || TARGET_PRESETS.parent;
+
+      // Reconstruct standard fields from preset definition
+      let fields = [];
+      if (Array.isArray(raw.fields) && raw.fields.length > 0 && typeof raw.fields[0] === 'object') {
+        fields = raw.fields;
+      } else {
+        const activeFieldIds = new Set(raw.f || []);
+        fields = (preset.fields || []).map(pf => ({
+          ...pf,
+          enabled: activeFieldIds.size > 0 ? activeFieldIds.has(pf.id) : pf.enabled
+        }));
+      }
+
+      // Reconstruct custom fields
+      const customFields = (raw.cf || raw.customFields || []).map(c => ({
+        id: c.id,
+        label: c.l || c.label,
+        type: c.t || c.type,
+        required: !!(c.r !== undefined ? c.r : c.required),
+        enabled: true,
+        options: c.opt || c.options || []
+      }));
+
+      return {
+        id: raw.i || raw.id,
+        title: raw.t || raw.title,
+        date: raw.d || raw.date,
+        time: raw.tm || raw.time || '14:00',
+        location: raw.l || raw.location || '',
+        description: raw.ds || raw.description || '',
+        target: targetKey,
+        fields: fields,
+        customFields: customFields,
+        printSettings: {
+          showTitle: true,
+          showDate: true,
+          showLocation: true,
+          showPhone: true,
+          showTimestamp: true,
+          showSignature: true
+        }
+      };
     } catch (e) {
       console.error('Failed to decode event data from URL:', e);
       return null;
@@ -1663,15 +1715,17 @@ class SmartEventApp {
                     window.location.hostname === 'localhost' || 
                     window.location.hostname === '127.0.0.1';
 
+    const defaultIp = '10.11.120.19';
+    const currentPort = window.location.port ? `:${window.location.port}` : ':5500';
+
     if (noticeBox) {
       noticeBox.style.display = isLocal ? 'block' : 'none';
       if (hostInput && !hostInput.value) {
-        const port = window.location.port ? `:${window.location.port}` : '';
-        hostInput.placeholder = `예: 192.168.0.25${port}`;
+        hostInput.value = `${defaultIp}${currentPort}`;
       }
     }
 
-    const customHost = hostInput ? hostInput.value.trim() : null;
+    const customHost = (hostInput && hostInput.value.trim()) ? hostInput.value.trim() : (isLocal ? `${defaultIp}${currentPort}` : null);
     this.renderCurrentQRCode(eventData, customHost);
     this.openModal('modal-qr');
   }
@@ -1685,7 +1739,7 @@ class SmartEventApp {
     const customHost = hostInput ? hostInput.value.trim() : null;
 
     if (!customHost) {
-      this.showToast('PC의 IP 주소(예: 192.168.0.25:5500)를 입력해 주세요.', 'warning');
+      this.showToast('PC의 IP 주소(예: 10.11.120.19:5500)를 입력해 주세요.', 'warning');
       return;
     }
 
@@ -1705,8 +1759,8 @@ class SmartEventApp {
       mount.innerHTML = '';
       new QRCode(mount, {
         text: targetUrl,
-        width: 220,
-        height: 220,
+        width: 250,
+        height: 250,
         colorDark: '#0f172a',
         colorLight: '#ffffff'
       });
